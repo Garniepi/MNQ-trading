@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b1220">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon.svg">
+<title>Cadre MNQ</title>
+<style>
+:root{--bg:#07101e;--card:#111c2e;--line:#26364e;--text:#f5f7fb;--muted:#9fb0c8;--accent:#75a7ff;--good:#35d07f;--warn:#ffca57;--bad:#ff6b6b}
+*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+main{max-width:720px;margin:auto;padding:18px 14px 50px}.title{font-size:25px;font-weight:800}.sub{color:var(--muted);margin:4px 0 16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:15px;margin:12px 0}
+h2{font-size:16px;margin:0 0 12px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+label{font-size:12px;color:var(--muted)} input{width:100%;margin-top:5px;background:#091423;color:white;border:1px solid #34455f;border-radius:11px;padding:12px;font-size:17px}
+.kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px}.kpi{background:#091423;border-radius:14px;padding:12px}.kpi b{display:block;font-size:21px;margin-top:4px}.kpi span{font-size:11px;color:var(--muted)}
+.good{color:var(--good)} .bad{color:var(--bad)} .warn{color:var(--warn)}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:7px 4px;border-bottom:1px solid var(--line);text-align:right}th:first-child,td:first-child{text-align:left}
+td input{padding:8px;font-size:15px;margin:0}.status{font-weight:800;font-size:18px;margin-top:10px}
+button{background:var(--accent);color:#06101e;border:0;border-radius:12px;padding:11px 14px;font-weight:700}
+.small{font-size:12px;color:var(--muted);line-height:1.4}
+@media(max-width:520px){.grid,.kpis{grid-template-columns:1fr 1fr}.title{font-size:22px}}
+</style>
+</head>
+<body><main>
+<div class="title">Cadre de trade MNQ</div>
+<div class="sub">Enveloppe de risque & entrées étalées</div>
+
+<div class="card"><h2>1 · Cadre du trade</h2><div class="grid">
+<div><label>Capital de référence (€)<input id="capital" type="number" value="200000"></label></div>
+<div><label>Risque max (%)<input id="riskPct" type="number" step=".01" value=".25"></label></div>
+<div><label>Fair Value cible<input id="fv" type="number" step=".25" value="29500"></label></div>
+<div><label>Trendline 4H / Stop<input id="stop" type="number" step=".25" value="29300"></label></div>
+<div><label>ATR 15 min<input id="atr" type="number" step=".01" value="33"></label></div>
+<div><label>R/R minimum<input id="rrMin" type="number" step=".1" value="2"></label></div>
+<div><label>Valeur MNQ ($/pt)<input id="pointValue" type="number" step=".1" value="2"></label></div>
+</div></div>
+
+<div class="card"><h2>2 · Enveloppe calculée</h2><div class="kpis">
+<div class="kpi"><span>Prix plafond d'engagement</span><b id="entryMax">—</b></div>
+<div class="kpi"><span>Budget risque max</span><b id="budget">—</b></div>
+<div class="kpi"><span>MNQ max au plafond</span><b id="maxQty">—</b></div>
+<div class="kpi"><span>Stop / ATR au plafond</span><b id="stopAtr">—</b></div>
+</div></div>
+
+<div class="card"><h2>3 · Entrées étalées</h2>
+<table><thead><tr><th>#</th><th>Prix</th><th>MNQ</th><th>Risque</th></tr></thead><tbody id="entries"></tbody></table>
+<div style="margin-top:10px"><button id="clear">Effacer les entrées</button></div></div>
+
+<div class="card"><h2>4 · Position agrégée</h2><div class="kpis">
+<div class="kpi"><span>Total MNQ</span><b id="totalQty">0</b></div>
+<div class="kpi"><span>Prix moyen</span><b id="avg">—</b></div>
+<div class="kpi"><span>Risque au stop</span><b id="riskUsed">0</b></div>
+<div class="kpi"><span>Budget restant</span><b id="remaining">—</b></div>
+<div class="kpi"><span>Gain potentiel à FV</span><b id="gain">0</b></div>
+<div class="kpi"><span>R/R global</span><b id="rr">—</b></div>
+</div><div id="status" class="status">AUCUNE POSITION</div></div>
+
+<div class="card small">Le prix plafond est calculé à partir de la Fair Value, du stop 4H et du R/R minimum. Les MNQ servent à ajuster la taille pour que le risque total au stop reste dans l'enveloppe. Les montants MNQ sont en dollars tandis que le capital est saisi en euros : pour une précision stricte, ajoute ensuite un taux EUR/USD ou saisis un budget de risque directement en dollars.</div>
+</main>
+<script>
+const $=id=>document.getElementById(id), n=id=>parseFloat($(id).value)||0;
+const tbody=$("entries");
+for(let i=1;i<=8;i++){let tr=document.createElement("tr");tr.innerHTML=`<td>${i}</td><td><input class="ep" type="number" step=".25"></td><td><input class="eq" type="number" min="0" step="1"></td><td class="er">$0</td>`;tbody.appendChild(tr)}
+function fmt(x,d=2){return Number.isFinite(x)?x.toLocaleString("fr-FR",{minimumFractionDigits:d,maximumFractionDigits:d}):"—"}
+function calc(){
+ const capital=n("capital"), rp=n("riskPct")/100, fv=n("fv"), stop=n("stop"), atr=n("atr"), rrmin=n("rrMin"), pv=n("pointValue");
+ const budget=capital*rp, entryMax=(fv+rrmin*stop)/(1+rrmin), dist=entryMax-stop;
+ const maxQty=dist>0?Math.floor(budget/(dist*pv)):0;
+ $("entryMax").textContent=fmt(entryMax); $("budget").textContent=fmt(budget)+" €";
+ $("maxQty").textContent=maxQty; $("stopAtr").textContent=atr?fmt(dist/atr)+" ATR":"—";
+ let tq=0, weighted=0, risk=0, gain=0, over=false;
+ [...document.querySelectorAll("#entries tr")].forEach(tr=>{
+   const p=parseFloat(tr.querySelector(".ep").value)||0, q=parseInt(tr.querySelector(".eq").value)||0;
+   const r=(p&&q)?Math.max(0,(p-stop)*pv*q):0;
+   tr.querySelector(".er").textContent="$"+fmt(r);
+   if(p>entryMax&&q>0) over=true;
+   tq+=q; weighted+=p*q; risk+=r; if(p&&q) gain+=Math.max(0,(fv-p)*pv*q);
+ });
+ const avg=tq?weighted/tq:NaN, rem=budget-risk, rr=risk?gain/risk:NaN;
+ $("totalQty").textContent=tq; $("avg").textContent=tq?fmt(avg):"—";
+ $("riskUsed").textContent="$"+fmt(risk); $("remaining").textContent=fmt(rem)+"*";
+ $("gain").textContent="$"+fmt(gain); $("rr").textContent=risk?fmt(rr):"—";
+ const s=$("status");
+ if(!tq){s.textContent="AUCUNE POSITION";s.className="status"}
+ else if(risk>budget){s.textContent="RISQUE DÉPASSÉ";s.className="status bad"}
+ else if(over){s.textContent="PRIX HORS ENVELOPPE";s.className="status warn"}
+ else{s.textContent="CADRE RESPECTÉ";s.className="status good"}
+ localStorage.setItem("mnqInputs",JSON.stringify({capital:n("capital"),riskPct:n("riskPct"),fv,stop,atr,rrMin:rrmin,pointValue:pv,
+ entries:[...document.querySelectorAll("#entries tr")].map(tr=>[tr.querySelector(".ep").value,tr.querySelector(".eq").value])}));
+}
+document.querySelectorAll("input").forEach(x=>x.addEventListener("input",calc));
+$("clear").onclick=()=>{document.querySelectorAll(".ep,.eq").forEach(x=>x.value="");calc()};
+try{const d=JSON.parse(localStorage.getItem("mnqInputs"));if(d){["capital","riskPct","fv","stop","atr","rrMin","pointValue"].forEach(k=>{if(d[k]!=null)$(k).value=d[k]});[...document.querySelectorAll("#entries tr")].forEach((tr,i)=>{if(d.entries?.[i]){tr.querySelector(".ep").value=d.entries[i][0];tr.querySelector(".eq").value=d.entries[i][1]}})}}catch(e){}
+calc();
+if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");
+</script></body></html>
